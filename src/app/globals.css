@@ -14,3 +14,6 @@ button:disabled{opacity:.4;cursor:default}button[aria-pressed=true]{border-color
 .wrap{overflow:auto;border:1px solid var(--bd);border-radius:6px;margin-top:8px}
 canvas{position:absolute;left:0;top:0;transform-origin:0 0;touch-action:none;cursor:crosshair;max-width:none}
 .mu{color:var(--mu);font-size:13px}.sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.modal{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6)}
+.modal .pn{min-width:260px;padding:18px 20px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.6)}
+.modal .pn p{font-size:16px}.modal .row{justify-content:center;gap:10px}.modal .row button{min-width:80px}
