@@ -3,14 +3,14 @@ import { useEffect, useRef, useState } from 'react'
 import { CATALOG, FLOOR_COLORS, WALL_COLORS, canPlace, edgeLine, edgeRect, eIdx, fillCells, fp, inB, inE, itemOf, lineCells, nearestEdge, newPlan, objAt, rectCells } from '@/lib/plan'
 import type { EdgeRef, Item, Kind, Plan, Pt, Rot } from '@/lib/plan'
 
-type Tool = 'floor' | 'wall' | 'object' | 'eraser' | 'hand'
+type Tool = 'floor' | 'wall' | 'object' | 'eraser' | 'hand' | 'nobuild'
 type Mode = 'single' | 'brush' | 'line' | 'rect' | 'fill'
 type WKind = Kind | 'clear'
 type Shape = { cells?: Pt[]; edges?: EdgeRef[] }
-const CS = 40, KEY = 'base-planner-v1', GW = 21, GH = 18 // taille de grille fixe (largeur x hauteur)
-const MODES: Record<Tool, Mode[]> = { floor: ['single', 'brush', 'line', 'rect', 'fill'], wall: ['single', 'line', 'rect'], object: ['single', 'brush', 'line', 'rect'], eraser: ['single', 'brush', 'rect'], hand: [] }
+const CS = 40, KEY = 'base-planner-v2', GW = 21, GH = 18 // taille de grille fixe (largeur x hauteur)
+const MODES: Record<Tool, Mode[]> = { floor: ['single', 'brush', 'line', 'rect', 'fill'], wall: ['single', 'line', 'rect'], object: ['single', 'brush', 'line', 'rect'], eraser: ['single', 'brush', 'rect'], hand: [], nobuild: ['single', 'brush', 'line', 'rect'] }
 const MODE_NAME: Record<Mode, string> = { single: 'Case', brush: 'Pinceau', line: 'Ligne', rect: 'Rectangle', fill: 'Remplir' }
-const TOOL_NAME: Record<Tool, string> = { floor: 'Sol', wall: 'Mur', object: 'Objet', eraser: 'Gomme', hand: 'Main' }
+const TOOL_NAME: Record<Tool, string> = { floor: 'Sol', wall: 'Mur', object: 'Objet', nobuild: 'Zone interdite', eraser: 'Gomme', hand: 'Main' }
 const WKINDS: [WKind, string][] = [['wall', 'Mur'], ['door', 'Porte'], ['window', 'Fenêtre'], ['clear', 'Effacer mur']]
 const BAND = 2 // largeur (en cases) de la zone neutre entre la zone constructible et le vert
 const BAND_TINT = 'rgba(0,0,0,0)' // teinte de cette zone : transparent = herbe naturelle (ex. 'rgba(255,255,255,.08)' pour l'éclaircir)
@@ -38,13 +38,26 @@ function makeTerrain(cw: number, ch: number, img?: HTMLImageElement): HTMLCanvas
 }
 const asset = (p: string) => (process.env.NEXT_PUBLIC_BASE_PATH || '') + p
 
+// Zones interdites présentes au lancement : { x, y, w, h } en cases (x et y partent du coin haut-gauche, à 0)
+const DEFAULT_NOBUILD = [{ x: 0, y: 12, w: 5, h: 4 }]
+function withDefaults(p: Plan): Plan {
+  const n = structuredClone(p)
+  for (const r of DEFAULT_NOBUILD) for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) {
+    if (!inB(n, x, y)) continue
+    const i = y * n.w + x; n.nb[i] = true; n.floor[i] = 0
+    const o = objAt(n, x, y); if (o) n.objs = n.objs.filter(q => q !== o)
+  }
+  return n
+}
+const freshPlan = () => withDefaults(newPlan(GW, GH))
 function applyCells(p: Plan, cells: Pt[], tool: Tool, level: number, it: Item, rot: Rot): Plan {
   const n = structuredClone(p)
   for (const c of cells) {
     if (!inB(n, c.x, c.y)) continue
     const i = c.y * n.w + c.x
-    if (tool === 'floor') n.floor[i] = level
-    else if (tool === 'eraser') { const o = objAt(n, c.x, c.y); if (o) n.objs = n.objs.filter(q => q !== o); else n.floor[i] = 0 }
+    if (tool === 'floor') { if (!n.nb[i]) n.floor[i] = level }
+    else if (tool === 'nobuild') { n.nb[i] = true; n.floor[i] = 0; const o = objAt(n, c.x, c.y); if (o) n.objs = n.objs.filter(q => q !== o) }
+    else if (tool === 'eraser') { const o = objAt(n, c.x, c.y); if (o) n.objs = n.objs.filter(q => q !== o); else if (n.floor[i]) n.floor[i] = 0; else n.nb[i] = false }
     else if (canPlace(n, it, c.x, c.y, rot)) n.objs.push({ id: n.next++, t: it.id, x: c.x, y: c.y, r: rot })
   }
   return n
@@ -55,7 +68,7 @@ function applyEdges(p: Plan, es: EdgeRef[], kind: WKind, level: number): Plan {
   return n
 }
 export default function Planner() {
-  const [plan, setPlan] = useState<Plan>(() => newPlan(GW, GH))
+  const [plan, setPlan] = useState<Plan>(freshPlan)
   const [tool, setTool] = useState<Tool>('wall')
   const [mode, setMode] = useState<Mode>('line')
   const [level, setLevel] = useState(1)
@@ -85,7 +98,7 @@ export default function Planner() {
   type Tgt = { cell: Pt; vert: Pt; edge: EdgeRef }
   const it = itemOf(itemId)
 
-  useEffect(() => { try { const s = localStorage.getItem(KEY); if (s) { const d = JSON.parse(s); if (d.w === GW && d.h === GH) setPlan(d) } } catch {} loaded.current = true }, [])
+  useEffect(() => { try { const s = localStorage.getItem(KEY); if (s) { const d = JSON.parse(s); if (d.w === GW && d.h === GH) setPlan({ ...d, nb: d.nb ?? Array(GW * GH).fill(false) }) } } catch {} loaded.current = true }, [])
   useEffect(() => { if (loaded.current) try { localStorage.setItem(KEY, JSON.stringify(plan)) } catch {} }, [plan])
 
   const commit = (n: Plan) => { undo.current.push(plan); if (undo.current.length > 100) undo.current.shift(); redo.current = []; setPlan(n) }
@@ -140,12 +153,18 @@ export default function Planner() {
     if (terrain.current?.k !== k) terrain.current = { k, c: makeTerrain(plan.w + 2 * M, plan.h + 2 * M, ok ? grass.current : undefined) }
     g.drawImage(terrain.current.c, 0, 0); g.translate(M * CS, M * CS)
     for (let y = 0; y < plan.h; y++) for (let x = 0; x < plan.w; x++) { const l = plan.floor[y * plan.w + x]; if (l) { g.fillStyle = FLOOR_COLORS[l]; g.fillRect(x * CS, y * CS, CS, CS) } }
+    for (let y = 0; y < plan.h; y++) for (let x = 0; x < plan.w; x++) if (plan.nb[y * plan.w + x]) {
+      g.fillStyle = 'rgba(225,70,70,.4)'; g.fillRect(x * CS, y * CS, CS, CS)
+      g.fillStyle = 'rgba(255,150,150,.2)'; for (let sx = 2; sx < CS; sx += 8) g.fillRect(x * CS + sx, y * CS, 3, CS)
+    }
     g.strokeStyle = 'rgba(255,255,255,.32)'; g.lineWidth = 1; g.beginPath()
     for (let x = 0; x <= plan.w; x++) { g.moveTo(x * CS + .5, 0); g.lineTo(x * CS + .5, H) }
     for (let y = 0; y <= plan.h; y++) { g.moveTo(0, y * CS + .5); g.lineTo(W, y * CS + .5) }
     g.stroke()
     g.fillStyle = 'rgba(255,255,255,.85)'
     for (let y = 0; y <= plan.h; y++) for (let x = 0; x <= plan.w; x++) { g.fillRect(x * CS - 3, y * CS - .5, 7, 1.5); g.fillRect(x * CS - .5, y * CS - 3, 1.5, 7) }
+    g.fillStyle = 'rgba(255,95,95,.95)'
+    for (let y = 0; y < plan.h; y++) for (let x = 0; x < plan.w; x++) if (plan.nb[y * plan.w + x]) for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { const px = (x + dx) * CS, py = (y + dy) * CS; g.fillRect(px - 3, py - .5, 7, 1.5); g.fillRect(px - .5, py - 3, 1.5, 7) }
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `${CS * .55}px sans-serif`
     for (const o of plan.objs) {
       const i = itemOf(o.t), f = fp(i, o.r), cx = (o.x + f.w / 2) * CS, cy = (o.y + f.h / 2) * CS
@@ -190,13 +209,20 @@ export default function Planner() {
           <button disabled={!it.rotatable} onClick={() => setRot(r => ((r + 90) % 360) as Rot)}>Pivoter (R)</button>
           <p className="mu">Un objet se pose uniquement sur un sol{it.max ? `, maximum ${it.max}` : ''}.</p>
         </>}
+        {tool === 'nobuild' && <>
+          <p className="mu">Une zone interdite bloque les sols et les objets. Utilise la gomme pour en retirer une case.</p>
+          <div className="row">
+            <button onClick={() => commit(withDefaults(plan))}>Remettre les zones de départ</button>
+            <button onClick={() => commit({ ...plan, nb: Array(plan.w * plan.h).fill(false) })}>Retirer toutes les zones</button>
+          </div>
+        </>}
       </aside>
       <section className="stage" ref={view} style={{ cursor: tool === 'hand' ? 'grab' : undefined }} onPointerDown={vDown} onPointerMove={vMove} onPointerUp={vUp} onPointerCancel={vUp} onWheel={wheel}>
         <canvas ref={cv} style={{ transform: `translate(${cam.x}px,${cam.y}px) scale(${cam.z})` }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { drag.current = null; setPv(null) }} />
         <div className="float" onPointerDown={e => e.stopPropagation()}>
           <button disabled={!undo.current.length} onClick={doUndo}>Annuler</button>
           <button disabled={!redo.current.length} onClick={doRedo}>Rétablir</button>
-          <button onClick={() => commit(newPlan(GW, GH))}>Tout effacer</button>
+          <button onClick={() => commit(freshPlan())}>Tout effacer</button>
           <button onClick={() => zoomCenter(1 / 1.2)}>−</button><span className="mu">{Math.round(cam.z * 100)} %</span><button onClick={() => zoomCenter(1.2)}>+</button>
           <button onClick={fit}>Réinitialiser la caméra</button>
         </div>
