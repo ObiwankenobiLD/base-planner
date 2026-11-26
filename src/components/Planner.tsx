@@ -44,7 +44,8 @@ const asset = (p: string) => (process.env.NEXT_PUBLIC_BASE_PATH || '') + p
 const DEFAULT_NOBUILD: { x: number; y: number; w?: number; h?: number }[] = [
   { x: 0, y: 12, w: 5, h: 4 },
   { x: 19, y: 0, w: 2, h: 2 },
-  // { x: 15, y: 8 },
+  { x: 17, y: 0, w: 2, h: 2 },
+  { x: 15, y: 0, w: 2, h: 2 },
 ]
 function withDefaults(p: Plan): Plan {
   const n = structuredClone(p)
