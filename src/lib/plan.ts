@@ -2,7 +2,7 @@ export type Rot = 0 | 90 | 180 | 270
 export type Kind = 'wall' | 'door' | 'window'
 export type Edge = { k: Kind; l: number }
 export type Obj = { id: number; t: string; x: number; y: number; r: Rot }
-export type Plan = { w: number; h: number; floor: number[]; hw: (Edge | null)[]; vw: (Edge | null)[]; objs: Obj[]; next: number; nb: boolean[]; ng: number[] }
+export type Plan = { w: number; h: number; floor: number[]; hw: (Edge | null)[]; vw: (Edge | null)[]; objs: Obj[]; next: number; nb: boolean[]; ng: number[]; hole: boolean[] }
 export type Pt = { x: number; y: number }
 export type EdgeRef = { o: 'h' | 'v'; x: number; y: number }
 /** image: chemin dans /public (ex. '/assets/etabli.png'). Sans image, un aplat de couleur + icône est dessiné. */
@@ -19,7 +19,7 @@ export const CATALOG: Item[] = [
   { id: 'shelf', name: 'Étagère', w: 2, h: 1, color: '#6a5a4a', icon: '🗄️', rotatable: true },
   { id: 'crop', name: 'Culture', w: 2, h: 2, color: '#4a7a3a', icon: '🌱', rotatable: false },
 ]
-export const newPlan = (w = 24, h = 16): Plan => ({ w, h, floor: Array(w * h).fill(0), hw: Array((h + 1) * w).fill(null), vw: Array(h * (w + 1)).fill(null), objs: [], next: 1, nb: Array(w * h).fill(false), ng: Array(w * h).fill(0) })
+export const newPlan = (w = 24, h = 16): Plan => ({ w, h, floor: Array(w * h).fill(0), hw: Array((h + 1) * w).fill(null), vw: Array(h * (w + 1)).fill(null), objs: [], next: 1, nb: Array(w * h).fill(false), ng: Array(w * h).fill(0), hole: Array(w * h).fill(false) })
 export const itemOf = (id: string) => CATALOG.find(i => i.id === id)!
 export const fp = (i: Item, r: Rot) => (r % 180 ? { w: i.h, h: i.w } : { w: i.w, h: i.h })
 export const inB = (p: Plan, x: number, y: number) => x >= 0 && y >= 0 && x < p.w && y < p.h
@@ -28,15 +28,17 @@ export function canPlace(p: Plan, it: Item, x: number, y: number, r: Rot) {
   if (it.max && p.objs.filter(o => o.t === it.id).length >= it.max) return false
   const f = fp(it, r)
   for (let j = 0; j < f.h; j++) for (let i = 0; i < f.w; i++) {
-    if (!inB(p, x + i, y + j) || !p.floor[(y + j) * p.w + x + i] || p.nb[(y + j) * p.w + x + i] || objAt(p, x + i, y + j)) return false
+    if (!inB(p, x + i, y + j) || !p.floor[(y + j) * p.w + x + i] || p.nb[(y + j) * p.w + x + i] || p.hole[(y + j) * p.w + x + i] || objAt(p, x + i, y + j)) return false
   }
   return true
 }
 export const inE = (p: Plan, e: EdgeRef) => e.o === 'h' ? e.x >= 0 && e.x < p.w && e.y >= 0 && e.y <= p.h : e.x >= 0 && e.x <= p.w && e.y >= 0 && e.y < p.h
-/** Une arête est interdite sauf si elle touche au moins une case constructible (blanche). Une arête rouge/blanc est donc permise, rouge/rouge ou rouge/vide non. */
+/** Case retirée de la carte (aucune grille, rien ne s'y pose) : elle se comporte comme l'extérieur de la grille. */
+export const isHole = (p: Plan, x: number, y: number) => !inB(p, x, y) || !!p.hole[y * p.w + x]
+/** Une arête est interdite sauf si elle touche au moins une case constructible (blanche). Une arête rouge/blanc est donc permise, rouge/rouge, rouge/vide ou vide/vide non. */
 export const edgeBlocked = (p: Plan, e: EdgeRef) => {
   const c: Pt[] = e.o === 'h' ? [{ x: e.x, y: e.y - 1 }, { x: e.x, y: e.y }] : [{ x: e.x - 1, y: e.y }, { x: e.x, y: e.y }]
-  return !c.some(q => inB(p, q.x, q.y) && !p.nb[q.y * p.w + q.x])
+  return !c.some(q => !isHole(p, q.x, q.y) && !p.nb[q.y * p.w + q.x])
 }
 export const eIdx = (p: Plan, e: EdgeRef) => e.o === 'h' ? e.y * p.w + e.x : e.y * (p.w + 1) + e.x
 
@@ -58,14 +60,14 @@ export function rectCells(a: Pt, b: Pt): Pt[] {
   return out
 }
 export function fillCells(p: Plan, s: Pt, level: number): Pt[] {
-  if (!inB(p, s.x, s.y)) return []
+  if (!inB(p, s.x, s.y) || p.hole[s.y * p.w + s.x]) return []
   const from = p.floor[s.y * p.w + s.x]; if (from === level) return []
   const seen = new Set<number>([s.y * p.w + s.x]), q = [s], out: Pt[] = []
   while (q.length && out.length < 5000) {
     const c = q.pop()!; out.push(c)
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const x = c.x + dx, y = c.y + dy, k = y * p.w + x
-      if (inB(p, x, y) && !seen.has(k) && p.floor[k] === from) { seen.add(k); q.push({ x, y }) }
+      if (inB(p, x, y) && !p.hole[k] && !seen.has(k) && p.floor[k] === from) { seen.add(k); q.push({ x, y }) }
     }
   }
   return out
