@@ -203,7 +203,7 @@ export default function Planner() {
     // (ex. zone 6x2 -> 3 croix de 2x2 ; zone 5x4 -> 1 croix de 5x4). Plus aucune petite croix aux intersections.
     const zones = new Map<number, Pt[]>()
     plan.nb.forEach((v, i) => { if (v) { const k = nbKey(plan, i), l = zones.get(k) ?? []; l.push({ x: i % plan.w, y: Math.floor(i / plan.w) }); zones.set(k, l) } })
-    g.strokeStyle = 'rgba(255,70,70,.95)'; g.lineWidth = 4; g.lineCap = 'butt'; g.beginPath()
+    g.strokeStyle = 'rgba(255,110,110,.95)'; g.lineWidth = 4; g.lineCap = 'butt'; g.beginPath()
     for (const cells of zones.values()) {
       const x0 = Math.min(...cells.map(c => c.x)), x1 = Math.max(...cells.map(c => c.x)) + 1
       const y0 = Math.min(...cells.map(c => c.y)), y1 = Math.max(...cells.map(c => c.y)) + 1
