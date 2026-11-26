@@ -43,33 +43,9 @@ const asset = (p: string) => (process.env.NEXT_PUBLIC_BASE_PATH || '') + p
 // w et h sont facultatifs (1 par défaut) : { x: 3, y: 5 } = un seul carré ; { x: 0, y: 12, w: 5, h: 4 } = un bloc de carrés.
 // Dans l'appli, un clic sur une zone rouge propose de la supprimer (popup Oui / Non). Il n'y a plus d'outil pour en ajouter.
 const DEFAULT_NOBUILD: { x: number; y: number; w?: number; h?: number }[] = [
-  { x: 15, y: 0, w: 2, h: 2 },
-  { x: 17, y: 0, w: 2, h: 2 },
-  { x: 19, y: 0, w: 2, h: 2 },
-  { x: 15, y: 2, w: 2, h: 2 },
-  { x: 17, y: 2, w: 2, h: 2 },
-  { x: 19, y: 2, w: 2, h: 2 },
-  { x: 15, y: 4, w: 2, h: 2 },
-  { x: 17, y: 4, w: 2, h: 2 },
-  { x: 19, y: 4, w: 2, h: 2 },
-  { x: 15, y: 6, w: 2, h: 2 },
-  { x: 17, y: 6, w: 2, h: 2 },
-  { x: 19, y: 6, w: 2, h: 2 },
-  { x: 15, y: 8, w: 2, h: 2 },
-  { x: 17, y: 8, w: 2, h: 2 },
-  { x: 19, y: 8, w: 2, h: 2 },
-  { x: 15, y: 10, w: 2, h: 2 },
-  { x: 17, y: 10, w: 2, h: 2 },
-  { x: 19, y: 10, w: 2, h: 2 },
-  { x: 15, y: 12, w: 2, h: 2 },
-  { x: 17, y: 12, w: 2, h: 2 },
-  { x: 19, y: 12, w: 2, h: 2 },
-  { x: 15, y: 14, w: 2, h: 2 },
-  { x: 17, y: 14, w: 2, h: 2 },
-  { x: 19, y: 14, w: 2, h: 2 },
-  { x: 15, y: 16, w: 2, h: 2 },
-  { x: 17, y: 16, w: 2, h: 2 },
-  { x: 19, y: 16, w: 2, h: 2 },
+  { x: 0, y: 12, w: 5, h: 4 },
+  // { x: 10, y: 3 },
+  // { x: 15, y: 8 },
 ]
 // Cases RETIRÉES de la carte : plus de grille, plus de zone claire, rien ne peut s'y poser (le joueur ne peut pas les remettre).
 // Même format que ci-dessus : { x, y, w?, h? }. Modifier cette liste suffit : elle est ré-appliquée à chaque chargement de la page.
@@ -157,8 +133,8 @@ export default function Planner() {
 
   useEffect(() => {
     const f = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setAsk(null)
-      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? doRedo() : doUndo() }
+      if (ask) { e.preventDefault(); return } // popup ouverte : tout est bloqué tant qu'on n'a pas répondu Oui / Non
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? doRedo() : doUndo() }
       else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); doRedo() }
       else if (e.key.toLowerCase() === 'r' && it.rotatable) setRot(r => ((r + 90) % 360) as Rot)
     }
@@ -321,8 +297,8 @@ export default function Planner() {
         <p className="foot mu">{CATALOG.filter(i => counts[i.id]).map(i => `${i.name} : ${counts[i.id]}`).join(' · ') || 'Aucun objet posé.'}</p>
       </section>
       {ask && (
-        <div className="modal" onPointerDown={e => e.stopPropagation()} onClick={() => setAsk(null)}>
-          <div className="pn" onClick={e => e.stopPropagation()}>
+        <div className="modal" onPointerDown={e => e.stopPropagation()} onWheel={e => e.stopPropagation()}>
+          <div className="pn">
             <p style={{ margin: '0 0 10px' }}>Supprimer les débris ?</p>
             <div className="row">
               <button onClick={() => { const n = structuredClone(plan); for (const c of nbGroup(plan, ask.x, ask.y)) { n.nb[c.y * n.w + c.x] = false; n.ng[c.y * n.w + c.x] = 0 } commit(n); setAsk(null) }}>Oui</button>
