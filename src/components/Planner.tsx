@@ -46,9 +46,6 @@ const DEFAULT_NOBUILD: { x: number; y: number; w?: number; h?: number }[] = [
   { x: 15, y: 0, w: 2, h: 2 },
   { x: 17, y: 0, w: 2, h: 2 },
   { x: 19, y: 0, w: 2, h: 2 },
-  { x: 15, y: 2, w: 2, h: 2 },
-  { x: 17, y: 2, w: 2, h: 2 },
-  { x: 19, y: 2, w: 2, h: 2 },
 ]
 // Cases RETIRÉES de la carte : plus de grille, plus de zone claire, rien ne peut s'y poser (le joueur ne peut pas les remettre).
 // Même format que ci-dessus : { x, y, w?, h? }. Modifier cette liste suffit : elle est ré-appliquée à chaque chargement de la page.
@@ -206,7 +203,10 @@ export default function Planner() {
     // (ex. zone 6x2 -> 3 croix de 2x2 ; zone 5x4 -> 1 croix de 5x4). Plus aucune petite croix aux intersections.
     const zones = new Map<number, Pt[]>()
     plan.nb.forEach((v, i) => { if (v) { const k = nbKey(plan, i), l = zones.get(k) ?? []; l.push({ x: i % plan.w, y: Math.floor(i / plan.w) }); zones.set(k, l) } })
-    g.strokeStyle = 'rgba(255,110,110,.95)'; g.lineWidth = 4; g.lineCap = 'butt'; g.beginPath()
+    const RED = 'rgba(255,110,110,.95)', RED_W = 1 // couleur et épaisseur des traits rouges (1 = même épaisseur que la grille blanche)
+    g.strokeStyle = RED; g.lineWidth = RED_W; g.lineCap = 'butt'; g.beginPath()
+    // bordure rouge autour de chaque case interdite
+    plan.nb.forEach((v, i) => { if (v) g.rect((i % plan.w) * CS + .5, Math.floor(i / plan.w) * CS + .5, CS, CS) })
     for (const cells of zones.values()) {
       const x0 = Math.min(...cells.map(c => c.x)), x1 = Math.max(...cells.map(c => c.x)) + 1
       const y0 = Math.min(...cells.map(c => c.y)), y1 = Math.max(...cells.map(c => c.y)) + 1
