@@ -12,7 +12,9 @@ const MODES: Record<Tool, Mode[]> = { floor: ['single', 'brush', 'line', 'rect',
 const MODE_NAME: Record<Mode, string> = { single: 'Case', brush: 'Pinceau', line: 'Ligne', rect: 'Rectangle', fill: 'Remplir' }
 const TOOL_NAME: Record<Tool, string> = { floor: 'Sol', wall: 'Mur', object: 'Objet', eraser: 'Gomme', hand: 'Main' }
 const WKINDS: [WKind, string][] = [['wall', 'Mur'], ['door', 'Porte'], ['window', 'Fenêtre'], ['clear', 'Effacer mur']]
-const M = 3 // marge « hors carte » autour de la zone constructible
+const BAND = 2 // largeur (en cases) de la zone neutre entre la zone constructible et le vert
+const BAND_TINT = 'rgba(0,0,0,0)' // teinte de cette zone : transparent = herbe naturelle (ex. 'rgba(255,255,255,.08)' pour l'éclaircir)
+const M = BAND + 3 // marge totale autour de la zone constructible : zone neutre + vert « hors carte »
 const hash = (x: number, y: number, s = 0) => { let h = Math.imul(x + 1, 374761393) ^ Math.imul(y + 1, 668265263) ^ Math.imul(s + 1, 144665); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967295 }
 function makeTerrain(cw: number, ch: number, img?: HTMLImageElement): HTMLCanvasElement {
   const c = document.createElement('canvas'); c.width = cw * CS; c.height = ch * CS
@@ -29,7 +31,8 @@ function makeTerrain(cw: number, ch: number, img?: HTMLImageElement): HTMLCanvas
   }
   for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
     const inside = x >= M && x < cw - M && y >= M && y < ch - M
-    g.fillStyle = inside ? 'rgba(255,255,255,.12)' : 'rgba(70,205,30,.5)'; g.fillRect(x * CS, y * CS, CS, CS)
+    const near = x >= M - BAND && x < cw - M + BAND && y >= M - BAND && y < ch - M + BAND
+    g.fillStyle = inside ? 'rgba(255,255,255,.12)' : near ? BAND_TINT : 'rgba(70,205,30,.5)'; g.fillRect(x * CS, y * CS, CS, CS)
   }
   return c
 }
