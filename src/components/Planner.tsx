@@ -43,9 +43,9 @@ const asset = (p: string) => (process.env.NEXT_PUBLIC_BASE_PATH || '') + p
 // w et h sont facultatifs (1 par défaut) : { x: 3, y: 5 } = un seul carré ; { x: 0, y: 12, w: 5, h: 4 } = un bloc de carrés.
 // Dans l'appli, un clic sur une zone rouge propose de la supprimer (popup Oui / Non). Il n'y a plus d'outil pour en ajouter.
 const DEFAULT_NOBUILD: { x: number; y: number; w?: number; h?: number }[] = [
-  { x: 0, y: 12, w: 5, h: 4 },
-  // { x: 10, y: 3 },
-  // { x: 15, y: 8 },
+  { x: 0, y: 15, w: 2, h: 2 },
+  { x: 0, y: 17, w: 2, h: 2 },
+  { x: 0, y: 19, w: 2, h: 2 },
 ]
 // Cases RETIRÉES de la carte : plus de grille, plus de zone claire, rien ne peut s'y poser (le joueur ne peut pas les remettre).
 // Même format que ci-dessus : { x, y, w?, h? }. Modifier cette liste suffit : elle est ré-appliquée à chaque chargement de la page.
