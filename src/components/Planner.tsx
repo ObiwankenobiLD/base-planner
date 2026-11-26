@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { CATALOG, FLOOR_COLORS, WALL_COLORS, canPlace, edgeBlocked, edgeLine, edgeRect, eIdx, fillCells, fp, inB, inE, isHole, itemOf, lineCells, nbGroup, nbKey, nearestEdge, newPlan, objAt, rectCells } from '@/lib/plan'
+import { CATALOG, FLOOR_COLORS, WALL_COLORS, canPlace, edgeBlocked, edgeLine, edgeRect, eIdx, fillCells, fp, inB, inE, isHole, itemOf, lineCells, nbGroup, nearestEdge, newPlan, objAt, rectCells } from '@/lib/plan'
 import type { EdgeRef, Item, Kind, Plan, Pt, Rot } from '@/lib/plan'
 
 type Tool = 'floor' | 'wall' | 'object' | 'eraser' | 'hand'
@@ -16,7 +16,7 @@ const BAND = 2 // largeur (en cases) de la zone neutre entre la zone constructib
 const BAND_TINT = 'rgba(0,0,0,0)' // teinte de cette zone : transparent = herbe naturelle (ex. 'rgba(255,255,255,.08)' pour l'éclaircir)
 const M = BAND + 3 // marge totale autour de la zone constructible : zone neutre + vert « hors carte »
 const hash = (x: number, y: number, s = 0) => { let h = Math.imul(x + 1, 374761393) ^ Math.imul(y + 1, 668265263) ^ Math.imul(s + 1, 144665); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967295 }
-function makeTerrain(cw: number, ch: number, img?: HTMLImageElement, hole?: boolean[], gw = 0): HTMLCanvasElement {
+function makeTerrain(cw: number, ch: number, img?: HTMLImageElement, hole?: boolean[], nb?: boolean[], gw = 0): HTMLCanvasElement {
   const c = document.createElement('canvas'); c.width = cw * CS; c.height = ch * CS
   const g = c.getContext('2d')!
   if (img) { g.fillStyle = g.createPattern(img, 'repeat')!; g.fillRect(0, 0, c.width, c.height) }
@@ -32,7 +32,7 @@ function makeTerrain(cw: number, ch: number, img?: HTMLImageElement, hole?: bool
   for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
     const inside = x >= M && x < cw - M && y >= M && y < ch - M
     const near = x >= M - BAND && x < cw - M + BAND && y >= M - BAND && y < ch - M + BAND
-    const removed = inside && !!hole?.[(y - M) * gw + (x - M)]
+    const removed = inside && !!(hole?.[(y - M) * gw + (x - M)] || nb?.[(y - M) * gw + (x - M)]) // ni zone claire sous les zones rouges ni sur les cases retirées
     g.fillStyle = inside && !removed ? 'rgba(255,255,255,.12)' : near ? BAND_TINT : 'rgba(70,205,30,.5)'; g.fillRect(x * CS, y * CS, CS, CS)
   }
   return c
@@ -43,9 +43,9 @@ const asset = (p: string) => (process.env.NEXT_PUBLIC_BASE_PATH || '') + p
 // w et h sont facultatifs (1 par défaut) : { x: 3, y: 5 } = un seul carré ; { x: 0, y: 12, w: 5, h: 4 } = un bloc de carrés.
 // Dans l'appli, un clic sur une zone rouge propose de la supprimer (popup Oui / Non). Il n'y a plus d'outil pour en ajouter.
 const DEFAULT_NOBUILD: { x: number; y: number; w?: number; h?: number }[] = [
-  { x: 15, y: 0, w: 2, h: 2 },
-  { x: 17, y: 0, w: 2, h: 2 },
-  { x: 19, y: 0, w: 2, h: 2 },
+  { x: 0, y: 12, w: 5, h: 4 },
+  // { x: 10, y: 3 },
+  // { x: 15, y: 8 },
 ]
 // Cases RETIRÉES de la carte : plus de grille, plus de zone claire, rien ne peut s'y poser (le joueur ne peut pas les remettre).
 // Même format que ci-dessus : { x, y, w?, h? }. Modifier cette liste suffit : elle est ré-appliquée à chaque chargement de la page.
@@ -178,30 +178,20 @@ export default function Planner() {
     c.width = W + 2 * M * CS; c.height = H + 2 * M * CS
     if (!grass.current) { const im = new Image(); im.onload = () => setTick(t => t + 1); im.src = asset('/assets/grass.png'); grass.current = im }
     const ok = grass.current.complete && grass.current.naturalWidth > 0
-    const k = `${plan.w}x${plan.h}${ok ? 'i' : 'p'}${plan.hole.map(h => h ? 1 : 0).join('')}`
-    if (terrain.current?.k !== k) terrain.current = { k, c: makeTerrain(plan.w + 2 * M, plan.h + 2 * M, ok ? grass.current : undefined, plan.hole, plan.w) }
+    const k = `${plan.w}x${plan.h}${ok ? 'i' : 'p'}${plan.hole.map((h, i) => h ? 1 : plan.nb[i] ? 2 : 0).join('')}`
+    if (terrain.current?.k !== k) terrain.current = { k, c: makeTerrain(plan.w + 2 * M, plan.h + 2 * M, ok ? grass.current : undefined, plan.hole, plan.nb, plan.w) }
     g.drawImage(terrain.current.c, 0, 0); g.translate(M * CS, M * CS)
     for (let y = 0; y < plan.h; y++) for (let x = 0; x < plan.w; x++) { const l = plan.floor[y * plan.w + x]; if (l) { g.fillStyle = FLOOR_COLORS[l]; g.fillRect(x * CS, y * CS, CS, CS) } }
-    // Zones interdites : rouge transparent (comme les cases blanches), contour fin autour de chaque bloc
-    const nbAt = (x: number, y: number, k: number) => inB(plan, x, y) && plan.nb[y * plan.w + x] && nbKey(plan, y * plan.w + x) === k
-    for (let y = 0; y < plan.h; y++) for (let x = 0; x < plan.w; x++) if (plan.nb[y * plan.w + x]) {
-      const k = nbKey(plan, y * plan.w + x), L = nbAt(x - 1, y, k), R = nbAt(x + 1, y, k), U = nbAt(x, y - 1, k), D = nbAt(x, y + 1, k)
-      const x0 = x * CS, y0 = y * CS, x1 = x0 + CS, y1 = y0 + CS
-      g.fillStyle = 'rgba(230,60,60,.3)'; g.fillRect(x0, y0, CS, CS)
-      g.strokeStyle = 'rgba(255,110,110,.7)'; g.lineWidth = 2; g.beginPath()
-      if (!U) { g.moveTo(x0, y0 + 1); g.lineTo(x1, y0 + 1) }
-      if (!D) { g.moveTo(x0, y1 - 1); g.lineTo(x1, y1 - 1) }
-      if (!L) { g.moveTo(x0 + 1, y0); g.lineTo(x0 + 1, y1) }
-      if (!R) { g.moveTo(x1 - 1, y0); g.lineTo(x1 - 1, y1) }
-      g.stroke()
-    }
-    // Grille : blanche partout, rouge à l'intérieur des zones interdites (reste blanche là où elle touche une case constructible)
-    const hl: [number, number, number, number][] = [], hr: [number, number, number, number][] = []
+    // Zones interdites : simple teinte rouge transparente sur l'herbe (pas de zone claire dessous), avec des croix rouges
+    g.fillStyle = 'rgba(230,60,60,.32)'
+    for (let y = 0; y < plan.h; y++) for (let x = 0; x < plan.w; x++) if (plan.nb[y * plan.w + x]) g.fillRect(x * CS, y * CS, CS, CS)
+    // Grille : traits blancs partout sauf à l'intérieur des zones interdites, où il ne reste que des croix rouges (les croix touchant une case constructible restent blanches)
+    const hl: [number, number, number, number][] = []
     const vis = (e: EdgeRef) => (e.o === 'h' ? [[e.x, e.y - 1], [e.x, e.y]] : [[e.x - 1, e.y], [e.x, e.y]]).some(([cx, cy]) => !isHole(plan, cx, cy)) // grille absente entre deux cases retirées
-    for (let y = 0; y <= plan.h; y++) for (let x = 0; x < plan.w; x++) if (vis({ o: 'h', x, y })) (edgeBlocked(plan, { o: 'h', x, y }) ? hr : hl).push([x * CS, y * CS + .5, (x + 1) * CS, y * CS + .5])
-    for (let x = 0; x <= plan.w; x++) for (let y = 0; y < plan.h; y++) if (vis({ o: 'v', x, y })) (edgeBlocked(plan, { o: 'v', x, y }) ? hr : hl).push([x * CS + .5, y * CS, x * CS + .5, (y + 1) * CS])
+    for (let y = 0; y <= plan.h; y++) for (let x = 0; x < plan.w; x++) if (vis({ o: 'h', x, y }) && !edgeBlocked(plan, { o: 'h', x, y })) hl.push([x * CS, y * CS + .5, (x + 1) * CS, y * CS + .5])
+    for (let x = 0; x <= plan.w; x++) for (let y = 0; y < plan.h; y++) if (vis({ o: 'v', x, y }) && !edgeBlocked(plan, { o: 'v', x, y })) hl.push([x * CS + .5, y * CS, x * CS + .5, (y + 1) * CS])
     g.lineWidth = 1
-    for (const [col, arr] of [['rgba(255,255,255,.32)', hl], ['rgba(255,110,110,.6)', hr]] as const) { g.strokeStyle = col; g.beginPath(); for (const [x0, y0, x1, y1] of arr) { g.moveTo(x0, y0); g.lineTo(x1, y1) } g.stroke() }
+    g.strokeStyle = 'rgba(255,255,255,.32)'; g.beginPath(); for (const [x0, y0, x1, y1] of hl) { g.moveTo(x0, y0); g.lineTo(x1, y1) } g.stroke()
     for (let y = 0; y <= plan.h; y++) for (let x = 0; x <= plan.w; x++) {
       // croix rouge si toutes les cases autour du sommet sont interdites, blanche sinon
       const around = [[x - 1, y - 1], [x, y - 1], [x - 1, y], [x, y]]
