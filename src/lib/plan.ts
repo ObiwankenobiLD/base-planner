@@ -33,6 +33,11 @@ export function canPlace(p: Plan, it: Item, x: number, y: number, r: Rot) {
   return true
 }
 export const inE = (p: Plan, e: EdgeRef) => e.o === 'h' ? e.x >= 0 && e.x < p.w && e.y >= 0 && e.y <= p.h : e.x >= 0 && e.x <= p.w && e.y >= 0 && e.y < p.h
+/** Une arête est interdite sauf si elle touche au moins une case constructible (blanche). Une arête rouge/blanc est donc permise, rouge/rouge ou rouge/vide non. */
+export const edgeBlocked = (p: Plan, e: EdgeRef) => {
+  const c: Pt[] = e.o === 'h' ? [{ x: e.x, y: e.y - 1 }, { x: e.x, y: e.y }] : [{ x: e.x - 1, y: e.y }, { x: e.x, y: e.y }]
+  return !c.some(q => inB(p, q.x, q.y) && !p.nb[q.y * p.w + q.x])
+}
 export const eIdx = (p: Plan, e: EdgeRef) => e.o === 'h' ? e.y * p.w + e.x : e.y * (p.w + 1) + e.x
 
 export function lineCells(a: Pt, b: Pt): Pt[] {
