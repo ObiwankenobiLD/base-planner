@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { CATALOG, FLOOR_COLORS, WALL_COLORS, canPlace, edgeBlocked, edgeLine, edgeRect, eIdx, fillCells, fp, inB, inE, itemOf, lineCells, nbGroup, nbKey, nearestEdge, newPlan, objAt, rectCells } from '@/lib/plan'
+import { CATALOG, FLOOR_COLORS, WALL_COLORS, canPlace, edgeBlocked, edgeLine, edgeRect, eIdx, fillCells, fp, inB, inE, isHole, itemOf, lineCells, nbGroup, nbKey, nearestEdge, newPlan, objAt, rectCells } from '@/lib/plan'
 import type { EdgeRef, Item, Kind, Plan, Pt, Rot } from '@/lib/plan'
 
 type Tool = 'floor' | 'wall' | 'object' | 'eraser' | 'hand'
@@ -16,7 +16,7 @@ const BAND = 2 // largeur (en cases) de la zone neutre entre la zone constructib
 const BAND_TINT = 'rgba(0,0,0,0)' // teinte de cette zone : transparent = herbe naturelle (ex. 'rgba(255,255,255,.08)' pour l'éclaircir)
 const M = BAND + 3 // marge totale autour de la zone constructible : zone neutre + vert « hors carte »
 const hash = (x: number, y: number, s = 0) => { let h = Math.imul(x + 1, 374761393) ^ Math.imul(y + 1, 668265263) ^ Math.imul(s + 1, 144665); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967295 }
-function makeTerrain(cw: number, ch: number, img?: HTMLImageElement): HTMLCanvasElement {
+function makeTerrain(cw: number, ch: number, img?: HTMLImageElement, hole?: boolean[], gw = 0): HTMLCanvasElement {
   const c = document.createElement('canvas'); c.width = cw * CS; c.height = ch * CS
   const g = c.getContext('2d')!
   if (img) { g.fillStyle = g.createPattern(img, 'repeat')!; g.fillRect(0, 0, c.width, c.height) }
@@ -32,7 +32,8 @@ function makeTerrain(cw: number, ch: number, img?: HTMLImageElement): HTMLCanvas
   for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
     const inside = x >= M && x < cw - M && y >= M && y < ch - M
     const near = x >= M - BAND && x < cw - M + BAND && y >= M - BAND && y < ch - M + BAND
-    g.fillStyle = inside ? 'rgba(255,255,255,.12)' : near ? BAND_TINT : 'rgba(70,205,30,.5)'; g.fillRect(x * CS, y * CS, CS, CS)
+    const removed = inside && !!hole?.[(y - M) * gw + (x - M)]
+    g.fillStyle = inside && !removed ? 'rgba(255,255,255,.12)' : near ? BAND_TINT : 'rgba(70,205,30,.5)'; g.fillRect(x * CS, y * CS, CS, CS)
   }
   return c
 }
@@ -43,10 +44,26 @@ const asset = (p: string) => (process.env.NEXT_PUBLIC_BASE_PATH || '') + p
 // Dans l'appli, un clic sur une zone rouge propose de la supprimer (popup Oui / Non). Il n'y a plus d'outil pour en ajouter.
 const DEFAULT_NOBUILD: { x: number; y: number; w?: number; h?: number }[] = [
   { x: 0, y: 12, w: 5, h: 4 },
-  { x: 19, y: 0, w: 2, h: 2 },
-  { x: 17, y: 0, w: 2, h: 2 },
-  { x: 15, y: 0, w: 2, h: 2 },
+  // { x: 10, y: 3 },
+  // { x: 15, y: 8 },
 ]
+// Cases RETIRÉES de la carte : plus de grille, plus de zone claire, rien ne peut s'y poser (le joueur ne peut pas les remettre).
+// Même format que ci-dessus : { x, y, w?, h? }. Modifier cette liste suffit : elle est ré-appliquée à chaque chargement de la page.
+const DEFAULT_REMOVED: { x: number; y: number; w?: number; h?: number }[] = [
+  { x: 0, y: 12, w: 5, h: 4 },
+  // { x: 8, y: 0, w: 3 },
+]
+function withHoles(p: Plan): Plan {
+  const n = structuredClone(p)
+  n.hole = Array(n.w * n.h).fill(false)
+  for (const r of DEFAULT_REMOVED) for (let y = r.y; y < r.y + (r.h ?? 1); y++) for (let x = r.x; x < r.x + (r.w ?? 1); x++) {
+    if (!inB(n, x, y)) continue
+    const i = y * n.w + x; n.hole[i] = true; n.nb[i] = false; n.ng[i] = 0; n.floor[i] = 0
+  }
+  n.objs = n.objs.filter(o => { const f = fp(itemOf(o.t), o.r); for (let j = 0; j < f.h; j++) for (let i = 0; i < f.w; i++) if (n.hole[(o.y + j) * n.w + o.x + i]) return false; return true })
+  for (const e of ['h', 'v'] as const) { const a = e === 'h' ? n.hw : n.vw, cols = e === 'h' ? n.w : n.w + 1; a.forEach((w, i) => { if (w && edgeBlocked(n, { o: e, x: i % cols, y: Math.floor(i / cols) })) a[i] = null }) }
+  return n
+}
 function withDefaults(p: Plan): Plan {
   const n = structuredClone(p)
   for (const r of DEFAULT_NOBUILD) { const gid = n.next++; for (let y = r.y; y < r.y + (r.h ?? 1); y++) for (let x = r.x; x < r.x + (r.w ?? 1); x++) {
@@ -57,13 +74,13 @@ function withDefaults(p: Plan): Plan {
   for (const e of ['h', 'v'] as const) { const a = e === 'h' ? n.hw : n.vw, cols = e === 'h' ? n.w : n.w + 1; a.forEach((w, i) => { if (w && edgeBlocked(n, { o: e, x: i % cols, y: Math.floor(i / cols) })) a[i] = null }) }
   return n
 }
-const freshPlan = () => withDefaults(newPlan(GW, GH))
+const freshPlan = () => withHoles(withDefaults(newPlan(GW, GH)))
 function applyCells(p: Plan, cells: Pt[], tool: Tool, level: number, it: Item, rot: Rot): Plan {
   const n = structuredClone(p)
   for (const c of cells) {
     if (!inB(n, c.x, c.y)) continue
     const i = c.y * n.w + c.x
-    if (tool === 'floor') { if (!n.nb[i]) n.floor[i] = level }
+    if (tool === 'floor') { if (!n.nb[i] && !n.hole[i]) n.floor[i] = level }
     else if (tool === 'eraser') { const o = objAt(n, c.x, c.y); if (o) n.objs = n.objs.filter(q => q !== o); else if (n.floor[i]) n.floor[i] = 0 }
     else if (canPlace(n, it, c.x, c.y, rot)) n.objs.push({ id: n.next++, t: it.id, x: c.x, y: c.y, r: rot })
   }
@@ -106,7 +123,7 @@ export default function Planner() {
   type Tgt = { cell: Pt; vert: Pt; edge: EdgeRef }
   const it = itemOf(itemId)
 
-  useEffect(() => { try { const s = localStorage.getItem(KEY); if (s) { const d = JSON.parse(s); if (d.w === GW && d.h === GH) setPlan({ ...d, nb: d.nb ?? Array(GW * GH).fill(false), ng: d.ng ?? Array(GW * GH).fill(0) }) } } catch {} loaded.current = true }, [])
+  useEffect(() => { try { const s = localStorage.getItem(KEY); if (s) { const d = JSON.parse(s); if (d.w === GW && d.h === GH) setPlan(withHoles({ ...d, nb: d.nb ?? Array(GW * GH).fill(false), ng: d.ng ?? Array(GW * GH).fill(0), hole: [] })) } } catch {} loaded.current = true }, [])
   useEffect(() => { if (loaded.current) try { localStorage.setItem(KEY, JSON.stringify(plan)) } catch {} }, [plan])
 
   const commit = (n: Plan) => { undo.current.push(plan); if (undo.current.length > 100) undo.current.shift(); redo.current = []; setPlan(n) }
@@ -146,9 +163,9 @@ export default function Planner() {
   const up = (e: React.PointerEvent) => {
     const d = drag.current; if (!d) return
     const end = target(e), s = shape(d.a, end); drag.current = null; setPv(null)
-    // Simple clic sur un carré rouge (hors outil Mur/Main) : on demande confirmation avant de le supprimer
+    // Simple clic sur une zone rouge : popup de suppression. Avec l'outil Mur, un clic près d'un côté collé au blanc pose un mur à la place.
     const same = d.a.cell.x === end.cell.x && d.a.cell.y === end.cell.y
-    if (same && d.path.length === 1 && tool !== 'wall' && tool !== 'hand' && inB(plan, end.cell.x, end.cell.y) && plan.nb[end.cell.y * plan.w + end.cell.x]) { setAsk(end.cell); return }
+    if (same && d.path.length === 1 && tool !== 'hand' && (tool !== 'wall' || mode !== 'single' || edgeBlocked(plan, d.a.edge)) && inB(plan, end.cell.x, end.cell.y) && plan.nb[end.cell.y * plan.w + end.cell.x]) { setAsk(end.cell); return }
     let n = plan
     if (s.cells) n = applyCells(n, s.cells, tool, level, it, rot)
     if (s.edges) n = applyEdges(n, s.edges, wk, level)
@@ -161,8 +178,8 @@ export default function Planner() {
     c.width = W + 2 * M * CS; c.height = H + 2 * M * CS
     if (!grass.current) { const im = new Image(); im.onload = () => setTick(t => t + 1); im.src = asset('/assets/grass.png'); grass.current = im }
     const ok = grass.current.complete && grass.current.naturalWidth > 0
-    const k = `${plan.w}x${plan.h}${ok ? 'i' : 'p'}`
-    if (terrain.current?.k !== k) terrain.current = { k, c: makeTerrain(plan.w + 2 * M, plan.h + 2 * M, ok ? grass.current : undefined) }
+    const k = `${plan.w}x${plan.h}${ok ? 'i' : 'p'}${plan.hole.map(h => h ? 1 : 0).join('')}`
+    if (terrain.current?.k !== k) terrain.current = { k, c: makeTerrain(plan.w + 2 * M, plan.h + 2 * M, ok ? grass.current : undefined, plan.hole, plan.w) }
     g.drawImage(terrain.current.c, 0, 0); g.translate(M * CS, M * CS)
     for (let y = 0; y < plan.h; y++) for (let x = 0; x < plan.w; x++) { const l = plan.floor[y * plan.w + x]; if (l) { g.fillStyle = FLOOR_COLORS[l]; g.fillRect(x * CS, y * CS, CS, CS) } }
     // Zones interdites : rouge transparent (comme les cases blanches), contour fin autour de chaque bloc
@@ -180,13 +197,16 @@ export default function Planner() {
     }
     // Grille : blanche partout, rouge à l'intérieur des zones interdites (reste blanche là où elle touche une case constructible)
     const hl: [number, number, number, number][] = [], hr: [number, number, number, number][] = []
-    for (let y = 0; y <= plan.h; y++) for (let x = 0; x < plan.w; x++) (edgeBlocked(plan, { o: 'h', x, y }) ? hr : hl).push([x * CS, y * CS + .5, (x + 1) * CS, y * CS + .5])
-    for (let x = 0; x <= plan.w; x++) for (let y = 0; y < plan.h; y++) (edgeBlocked(plan, { o: 'v', x, y }) ? hr : hl).push([x * CS + .5, y * CS, x * CS + .5, (y + 1) * CS])
+    const vis = (e: EdgeRef) => (e.o === 'h' ? [[e.x, e.y - 1], [e.x, e.y]] : [[e.x - 1, e.y], [e.x, e.y]]).some(([cx, cy]) => !isHole(plan, cx, cy)) // grille absente entre deux cases retirées
+    for (let y = 0; y <= plan.h; y++) for (let x = 0; x < plan.w; x++) if (vis({ o: 'h', x, y })) (edgeBlocked(plan, { o: 'h', x, y }) ? hr : hl).push([x * CS, y * CS + .5, (x + 1) * CS, y * CS + .5])
+    for (let x = 0; x <= plan.w; x++) for (let y = 0; y < plan.h; y++) if (vis({ o: 'v', x, y })) (edgeBlocked(plan, { o: 'v', x, y }) ? hr : hl).push([x * CS + .5, y * CS, x * CS + .5, (y + 1) * CS])
     g.lineWidth = 1
     for (const [col, arr] of [['rgba(255,255,255,.32)', hl], ['rgba(255,110,110,.6)', hr]] as const) { g.strokeStyle = col; g.beginPath(); for (const [x0, y0, x1, y1] of arr) { g.moveTo(x0, y0); g.lineTo(x1, y1) } g.stroke() }
     for (let y = 0; y <= plan.h; y++) for (let x = 0; x <= plan.w; x++) {
       // croix rouge si toutes les cases autour du sommet sont interdites, blanche sinon
-      const white = [[x - 1, y - 1], [x, y - 1], [x - 1, y], [x, y]].some(([cx, cy]) => inB(plan, cx, cy) && !plan.nb[cy * plan.w + cx])
+      const around = [[x - 1, y - 1], [x, y - 1], [x - 1, y], [x, y]]
+      if (around.every(([cx, cy]) => isHole(plan, cx, cy))) continue
+      const white = around.some(([cx, cy]) => !isHole(plan, cx, cy) && !plan.nb[cy * plan.w + cx])
       g.fillStyle = white ? 'rgba(255,255,255,.85)' : 'rgba(255,110,110,.95)'
       g.fillRect(x * CS - 3, y * CS - .5, 7, 1.5); g.fillRect(x * CS - .5, y * CS - 3, 1.5, 7)
     }
@@ -209,7 +229,7 @@ export default function Planner() {
       if (w.k === 'door') stroke(e, '#e9d9a8', 4, 'butt'); else if (w.k === 'window') stroke(e, '#8fd3ee', 4, 'butt')
     })
     walls(plan.hw, 'h', plan.w); walls(plan.vw, 'v', plan.w + 1)
-    if (pv?.cells) { g.fillStyle = 'rgba(60,195,214,.35)'; for (const p of pv.cells) if (inB(plan, p.x, p.y)) g.fillRect(p.x * CS, p.y * CS, CS, CS) }
+    if (pv?.cells) { g.fillStyle = 'rgba(60,195,214,.35)'; for (const p of pv.cells) if (!isHole(plan, p.x, p.y)) g.fillRect(p.x * CS, p.y * CS, CS, CS) }
     if (pv?.edges) for (const e of pv.edges) if (inE(plan, e) && !edgeBlocked(plan, e)) stroke(e, 'rgba(60,195,214,.8)', 8, 'square')
   }, [plan, pv, tick])
 
@@ -249,7 +269,7 @@ export default function Planner() {
       {ask && (
         <div className="modal" onPointerDown={e => e.stopPropagation()} onClick={() => setAsk(null)}>
           <div className="pn" onClick={e => e.stopPropagation()}>
-            <p style={{ margin: '0 0 10px' }}>Supprimer cette zone interdite{nbGroup(plan, ask.x, ask.y).length > 1 ? ` (${nbGroup(plan, ask.x, ask.y).length} cases)` : ''} ?</p>
+            <p style={{ margin: '0 0 10px' }}>Supprimer les débris ?</p>
             <div className="row">
               <button onClick={() => { const n = structuredClone(plan); for (const c of nbGroup(plan, ask.x, ask.y)) { n.nb[c.y * n.w + c.x] = false; n.ng[c.y * n.w + c.x] = 0 } commit(n); setAsk(null) }}>Oui</button>
               <button onClick={() => setAsk(null)}>Non</button>
