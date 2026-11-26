@@ -234,7 +234,8 @@ export default function Planner() {
     g.strokeStyle = 'rgba(255,110,110,.55)'; g.lineWidth = 1; g.beginPath()
     plan.nb.forEach((v, i) => { if (v) g.rect((i % plan.w) * CS + .5, Math.floor(i / plan.w) * CS + .5, CS, CS) })
     g.stroke()
-    for (const cells of zones.values()) {
+    for (const [zk, cells] of zones) {
+      const inZ = (x: number, y: number) => isNb(x, y) && nbKey(plan, y * plan.w + x) === zk // même zone seulement : 2 zones voisines gardent chacune leur contour
       const x0 = Math.min(...cells.map(c => c.x)) * CS, x1 = (Math.max(...cells.map(c => c.x)) + 1) * CS
       const y0 = Math.min(...cells.map(c => c.y)) * CS, y1 = (Math.max(...cells.map(c => c.y)) + 1) * CS
       // rayures diagonales, limitées aux cases de la zone
@@ -246,16 +247,16 @@ export default function Planner() {
       g.strokeStyle = LIGHT; g.lineWidth = EDGE_W; g.lineCap = 'square'; g.beginPath()
       for (const { x, y } of cells) {
         const px = x * CS, py = y * CS
-        if (!isNb(x, y - 1)) { g.moveTo(px, py); g.lineTo(px + CS, py) }
-        if (!isNb(x, y + 1)) { g.moveTo(px, py + CS); g.lineTo(px + CS, py + CS) }
-        if (!isNb(x - 1, y)) { g.moveTo(px, py); g.lineTo(px, py + CS) }
-        if (!isNb(x + 1, y)) { g.moveTo(px + CS, py); g.lineTo(px + CS, py + CS) }
+        if (!inZ(x, y - 1)) { g.moveTo(px, py); g.lineTo(px + CS, py) }
+        if (!inZ(x, y + 1)) { g.moveTo(px, py + CS); g.lineTo(px + CS, py + CS) }
+        if (!inZ(x - 1, y)) { g.moveTo(px, py); g.lineTo(px, py + CS) }
+        if (!inZ(x + 1, y)) { g.moveTo(px + CS, py); g.lineTo(px + CS, py + CS) }
       }
       g.stroke()
       // coins foncés (angles extérieurs de la zone)
       g.strokeStyle = DARK; g.lineWidth = CORNER_W; g.lineCap = 'butt'; g.beginPath()
       for (const { x, y } of cells) {
-        const px = x * CS, py = y * CS, t = !isNb(x, y - 1), bo = !isNb(x, y + 1), l = !isNb(x - 1, y), r = !isNb(x + 1, y)
+        const px = x * CS, py = y * CS, t = !inZ(x, y - 1), bo = !inZ(x, y + 1), l = !inZ(x - 1, y), r = !inZ(x + 1, y)
         if (t && l) { g.moveTo(px, py + CORNER); g.lineTo(px, py); g.lineTo(px + CORNER, py) }
         if (t && r) { g.moveTo(px + CS - CORNER, py); g.lineTo(px + CS, py); g.lineTo(px + CS, py + CORNER) }
         if (bo && l) { g.moveTo(px, py + CS - CORNER); g.lineTo(px, py + CS); g.lineTo(px + CORNER, py + CS) }
