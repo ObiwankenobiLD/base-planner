@@ -126,9 +126,6 @@ export default function Planner() {
   const [ask, setAsk] = useState<Pt | null>(null) // carré rouge en attente de confirmation de suppression
   const [pv, setPv] = useState<Shape | null>(null)
   const [tick, setTick] = useState(0)
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark') // thème sombre / clair (suit le navigateur au premier lancement, puis mémorisé)
-  useEffect(() => { try { const t = localStorage.getItem('base-planner-theme'); setTheme(t === 'light' || t === 'dark' ? t : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') } catch {} }, [])
-  useEffect(() => { document.documentElement.dataset.theme = theme; try { localStorage.setItem('base-planner-theme', theme) } catch {} }, [theme])
   const cv = useRef<HTMLCanvasElement>(null)
   const undo = useRef<Plan[]>([]), redo = useRef<Plan[]>([])
   const drag = useRef<{ a: Tgt; path: Pt[] } | null>(null)
@@ -320,7 +317,6 @@ export default function Planner() {
           <button onClick={() => commit(freshPlan())}>Tout effacer</button>
           <button onClick={() => zoomCenter(1 / 1.2)}>−</button><span className="mu">{Math.round(cam.z * 100)} %</span><button onClick={() => zoomCenter(1.2)}>+</button>
           <button onClick={fit}>Réinitialiser la caméra</button>
-          <button onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? '☀ Clair' : '🌙 Sombre'}</button>
         </div>
         <p className="foot mu">{CATALOG.filter(i => counts[i.id]).map(i => `${i.name} : ${counts[i.id]}`).join(' · ') || 'Aucun objet posé.'}</p>
       </section>
