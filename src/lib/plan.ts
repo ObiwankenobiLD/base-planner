@@ -2,7 +2,7 @@ export type Rot = 0 | 90 | 180 | 270
 export type Kind = 'wall' | 'door' | 'window'
 export type Edge = { k: Kind; l: number }
 export type Obj = { id: number; t: string; x: number; y: number; r: Rot }
-export type Plan = { w: number; h: number; floor: number[]; hw: (Edge | null)[]; vw: (Edge | null)[]; objs: Obj[]; next: number }
+export type Plan = { w: number; h: number; floor: number[]; hw: (Edge | null)[]; vw: (Edge | null)[]; objs: Obj[]; next: number; nb: boolean[] }
 export type Pt = { x: number; y: number }
 export type EdgeRef = { o: 'h' | 'v'; x: number; y: number }
 /** image: chemin dans /public (ex. '/assets/etabli.png'). Sans image, un aplat de couleur + icône est dessiné. */
@@ -19,7 +19,7 @@ export const CATALOG: Item[] = [
   { id: 'shelf', name: 'Étagère', w: 2, h: 1, color: '#6a5a4a', icon: '🗄️', rotatable: true },
   { id: 'crop', name: 'Culture', w: 2, h: 2, color: '#4a7a3a', icon: '🌱', rotatable: false },
 ]
-export const newPlan = (w = 24, h = 16): Plan => ({ w, h, floor: Array(w * h).fill(0), hw: Array((h + 1) * w).fill(null), vw: Array(h * (w + 1)).fill(null), objs: [], next: 1 })
+export const newPlan = (w = 24, h = 16): Plan => ({ w, h, floor: Array(w * h).fill(0), hw: Array((h + 1) * w).fill(null), vw: Array(h * (w + 1)).fill(null), objs: [], next: 1, nb: Array(w * h).fill(false) })
 export const itemOf = (id: string) => CATALOG.find(i => i.id === id)!
 export const fp = (i: Item, r: Rot) => (r % 180 ? { w: i.h, h: i.w } : { w: i.w, h: i.h })
 export const inB = (p: Plan, x: number, y: number) => x >= 0 && y >= 0 && x < p.w && y < p.h
@@ -28,7 +28,7 @@ export function canPlace(p: Plan, it: Item, x: number, y: number, r: Rot) {
   if (it.max && p.objs.filter(o => o.t === it.id).length >= it.max) return false
   const f = fp(it, r)
   for (let j = 0; j < f.h; j++) for (let i = 0; i < f.w; i++) {
-    if (!inB(p, x + i, y + j) || !p.floor[(y + j) * p.w + x + i] || objAt(p, x + i, y + j)) return false
+    if (!inB(p, x + i, y + j) || !p.floor[(y + j) * p.w + x + i] || p.nb[(y + j) * p.w + x + i] || objAt(p, x + i, y + j)) return false
   }
   return true
 }
