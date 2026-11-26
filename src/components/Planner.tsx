@@ -3,14 +3,14 @@ import { useEffect, useRef, useState } from 'react'
 import { CATALOG, FLOOR_COLORS, WALL_COLORS, canPlace, edgeLine, edgeRect, eIdx, fillCells, fp, inB, inE, itemOf, lineCells, nearestEdge, newPlan, objAt, rectCells } from '@/lib/plan'
 import type { EdgeRef, Item, Kind, Plan, Pt, Rot } from '@/lib/plan'
 
-type Tool = 'floor' | 'wall' | 'object' | 'eraser'
+type Tool = 'floor' | 'wall' | 'object' | 'eraser' | 'hand'
 type Mode = 'single' | 'brush' | 'line' | 'rect' | 'fill'
 type WKind = Kind | 'clear'
 type Shape = { cells?: Pt[]; edges?: EdgeRef[] }
 const CS = 40, KEY = 'base-planner-v1', GW = 21, GH = 18 // taille de grille fixe (largeur x hauteur)
-const MODES: Record<Tool, Mode[]> = { floor: ['single', 'brush', 'line', 'rect', 'fill'], wall: ['single', 'line', 'rect'], object: ['single', 'brush', 'line', 'rect'], eraser: ['single', 'brush', 'rect'] }
+const MODES: Record<Tool, Mode[]> = { floor: ['single', 'brush', 'line', 'rect', 'fill'], wall: ['single', 'line', 'rect'], object: ['single', 'brush', 'line', 'rect'], eraser: ['single', 'brush', 'rect'], hand: [] }
 const MODE_NAME: Record<Mode, string> = { single: 'Case', brush: 'Pinceau', line: 'Ligne', rect: 'Rectangle', fill: 'Remplir' }
-const TOOL_NAME: Record<Tool, string> = { floor: 'Sol', wall: 'Mur', object: 'Objet', eraser: 'Gomme' }
+const TOOL_NAME: Record<Tool, string> = { floor: 'Sol', wall: 'Mur', object: 'Objet', eraser: 'Gomme', hand: 'Main' }
 const WKINDS: [WKind, string][] = [['wall', 'Mur'], ['door', 'Porte'], ['window', 'Fenêtre'], ['clear', 'Effacer mur']]
 const M = 3 // marge « hors carte » autour de la zone constructible
 const hash = (x: number, y: number, s = 0) => { let h = Math.imul(x + 1, 374761393) ^ Math.imul(y + 1, 668265263) ^ Math.imul(s + 1, 144665); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967295 }
@@ -66,6 +66,17 @@ export default function Planner() {
   const drag = useRef<{ a: Tgt; path: Pt[] } | null>(null)
   const imgs = useRef(new Map<string, HTMLImageElement>())
   const loaded = useRef(false)
+  const view = useRef<HTMLElement>(null)
+  const pan = useRef<{ sx: number; sy: number; x: number; y: number } | null>(null)
+  const [cam, setCam] = useState({ x: 0, y: 0, z: 1 })
+  const fit = () => { const v = view.current; if (!v) return; const cw = (GW + 2 * M) * CS, ch = (GH + 2 * M) * CS, z = Math.min(v.clientWidth / cw, v.clientHeight / ch) * .95; setCam({ z, x: (v.clientWidth - cw * z) / 2, y: (v.clientHeight - ch * z) / 2 }) }
+  const zoomAt = (px: number, py: number, f: number) => setCam(c => { const z = Math.min(4, Math.max(.2, c.z * f)), k = z / c.z; return { z, x: px - (px - c.x) * k, y: py - (py - c.y) * k } })
+  const zoomCenter = (f: number) => { const v = view.current; if (v) zoomAt(v.clientWidth / 2, v.clientHeight / 2, f) }
+  const wheel = (e: React.WheelEvent) => { const r = view.current!.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.1 : 1 / 1.1) }
+  const vDown = (e: React.PointerEvent) => { if (tool === 'hand' || e.button === 1 || e.target !== cv.current) { pan.current = { sx: e.clientX, sy: e.clientY, x: cam.x, y: cam.y }; view.current!.setPointerCapture(e.pointerId) } }
+  const vMove = (e: React.PointerEvent) => { const p = pan.current; if (p) setCam(c => ({ ...c, x: p.x + e.clientX - p.sx, y: p.y + e.clientY - p.sy })) }
+  const vUp = () => { pan.current = null }
+  useEffect(() => { fit() }, [])
   const grass = useRef<HTMLImageElement | null>(null)
   const terrain = useRef<{ k: string; c: HTMLCanvasElement } | null>(null)
   type Tgt = { cell: Pt; vert: Pt; edge: EdgeRef }
@@ -100,7 +111,7 @@ export default function Planner() {
     if (mode === 'fill') return { cells: fillCells(plan, a.cell, level) }
     return { cells: [a.cell] }
   }
-  const down = (e: React.PointerEvent) => { const t = target(e); drag.current = { a: t, path: [t.cell] }; cv.current!.setPointerCapture(e.pointerId); setPv(shape(t, t)) }
+  const down = (e: React.PointerEvent) => { if (e.button !== 0 || tool === 'hand') return; const t = target(e); drag.current = { a: t, path: [t.cell] }; cv.current!.setPointerCapture(e.pointerId); setPv(shape(t, t)) }
   const move = (e: React.PointerEvent) => {
     const d = drag.current; if (!d) return
     const t = target(e), l = d.path[d.path.length - 1]
@@ -120,7 +131,7 @@ export default function Planner() {
     const c = cv.current; if (!c) return
     const g = c.getContext('2d')!, W = plan.w * CS, H = plan.h * CS
     c.width = W + 2 * M * CS; c.height = H + 2 * M * CS
-    if (!grass.current) { const im = new Image(); im.onload = () => setTick(t => t + 1); im.src = asset('/assets/grass.png'); grass.current = im }
+    if (!grass.current) { const im = new Image(); im.onload = () => setTick(t => t + 1); im.src = asset('/assets/grass0.png'); grass.current = im }
     const ok = grass.current.complete && grass.current.naturalWidth > 0
     const k = `${plan.w}x${plan.h}${ok ? 'i' : 'p'}`
     if (terrain.current?.k !== k) terrain.current = { k, c: makeTerrain(plan.w + 2 * M, plan.h + 2 * M, ok ? grass.current : undefined) }
@@ -131,7 +142,7 @@ export default function Planner() {
     for (let y = 0; y <= plan.h; y++) { g.moveTo(0, y * CS + .5); g.lineTo(W, y * CS + .5) }
     g.stroke()
     g.fillStyle = 'rgba(255,255,255,.85)'
-    for (let y = 0; y <= plan.h; y++) for (let x = 0; x <= plan.w; x++) { g.fillRect(x * CS - 3, y * CS - .5, 7, 1.5); g.fillRect(x * CS - .5, y * CS - 3, 1.5, 7) }
+    for (let y = 0; y <= plan.h; y++) for (let x = 0; x <= plan.w; x++) if (hash(x, y, 77) > .55) { g.fillRect(x * CS - 3, y * CS - .5, 7, 1.5); g.fillRect(x * CS - .5, y * CS - 3, 1.5, 7) }
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `${CS * .55}px sans-serif`
     for (const o of plan.objs) {
       const i = itemOf(o.t), f = fp(i, o.r), cx = (o.x + f.w / 2) * CS, cy = (o.y + f.h / 2) * CS
@@ -161,7 +172,7 @@ export default function Planner() {
   )
   return (
     <div className="app">
-      <aside className="pn">
+      <aside className="side">
         <h1>Planificateur de base</h1>
         <h2>Outil</h2>
         <div className="row">{(Object.keys(TOOL_NAME) as Tool[]).map(t => <button key={t} aria-pressed={tool === t} onClick={() => pickTool(t)}>{TOOL_NAME[t]}</button>)}</div>
@@ -177,14 +188,16 @@ export default function Planner() {
           <p className="mu">Un objet se pose uniquement sur un sol{it.max ? `, maximum ${it.max}` : ''}.</p>
         </>}
       </aside>
-      <section className="pn">
-        <div className="row">
+      <section className="stage" ref={view} style={{ cursor: tool === 'hand' ? 'grab' : undefined }} onPointerDown={vDown} onPointerMove={vMove} onPointerUp={vUp} onPointerCancel={vUp} onWheel={wheel}>
+        <canvas ref={cv} style={{ transform: `translate(${cam.x}px,${cam.y}px) scale(${cam.z})` }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { drag.current = null; setPv(null) }} />
+        <div className="float" onPointerDown={e => e.stopPropagation()}>
           <button disabled={!undo.current.length} onClick={doUndo}>Annuler</button>
           <button disabled={!redo.current.length} onClick={doRedo}>Rétablir</button>
           <button onClick={() => commit(newPlan(GW, GH))}>Tout effacer</button>
+          <button onClick={() => zoomCenter(1 / 1.2)}>−</button><span className="mu">{Math.round(cam.z * 100)} %</span><button onClick={() => zoomCenter(1.2)}>+</button>
+          <button onClick={fit}>Réinitialiser la caméra</button>
         </div>
-        <div className="wrap"><canvas ref={cv} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { drag.current = null; setPv(null) }} /></div>
-        <p className="mu">{CATALOG.filter(i => counts[i.id]).map(i => `${i.name} : ${counts[i.id]}`).join(' · ') || 'Aucun objet posé.'}</p>
+        <p className="foot mu">{CATALOG.filter(i => counts[i.id]).map(i => `${i.name} : ${counts[i.id]}`).join(' · ') || 'Aucun objet posé.'}</p>
       </section>
     </div>
   )
