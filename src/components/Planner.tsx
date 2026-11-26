@@ -129,7 +129,7 @@ export default function Planner() {
     const c = cv.current; if (!c) return
     const g = c.getContext('2d')!, W = plan.w * CS, H = plan.h * CS
     c.width = W + 2 * M * CS; c.height = H + 2 * M * CS
-    if (!grass.current) { const im = new Image(); im.onload = () => setTick(t => t + 1); im.src = asset('/assets/grass0.png'); grass.current = im }
+    if (!grass.current) { const im = new Image(); im.onload = () => setTick(t => t + 1); im.src = asset('/assets/grass.png'); grass.current = im }
     const ok = grass.current.complete && grass.current.naturalWidth > 0
     const k = `${plan.w}x${plan.h}${ok ? 'i' : 'p'}`
     if (terrain.current?.k !== k) terrain.current = { k, c: makeTerrain(plan.w + 2 * M, plan.h + 2 * M, ok ? grass.current : undefined) }
