@@ -177,12 +177,18 @@ export default function Planner() {
       if (!R) { g.moveTo(x1 - 1, y0); g.lineTo(x1 - 1, y1) }
       g.stroke()
     }
-    g.strokeStyle = 'rgba(255,255,255,.32)'; g.lineWidth = 1; g.beginPath()
-    for (let x = 0; x <= plan.w; x++) { g.moveTo(x * CS + .5, 0); g.lineTo(x * CS + .5, H) }
-    for (let y = 0; y <= plan.h; y++) { g.moveTo(0, y * CS + .5); g.lineTo(W, y * CS + .5) }
-    g.stroke()
-    g.fillStyle = 'rgba(255,255,255,.85)'
-    for (let y = 0; y <= plan.h; y++) for (let x = 0; x <= plan.w; x++) { g.fillRect(x * CS - 3, y * CS - .5, 7, 1.5); g.fillRect(x * CS - .5, y * CS - 3, 1.5, 7) }
+    // Grille : blanche partout, rouge à l'intérieur des zones interdites (reste blanche là où elle touche une case constructible)
+    const hl: [number, number, number, number][] = [], hr: [number, number, number, number][] = []
+    for (let y = 0; y <= plan.h; y++) for (let x = 0; x < plan.w; x++) (edgeBlocked(plan, { o: 'h', x, y }) ? hr : hl).push([x * CS, y * CS + .5, (x + 1) * CS, y * CS + .5])
+    for (let x = 0; x <= plan.w; x++) for (let y = 0; y < plan.h; y++) (edgeBlocked(plan, { o: 'v', x, y }) ? hr : hl).push([x * CS + .5, y * CS, x * CS + .5, (y + 1) * CS])
+    g.lineWidth = 1
+    for (const [col, arr] of [['rgba(255,255,255,.32)', hl], ['rgba(255,110,110,.6)', hr]] as const) { g.strokeStyle = col; g.beginPath(); for (const [x0, y0, x1, y1] of arr) { g.moveTo(x0, y0); g.lineTo(x1, y1) } g.stroke() }
+    for (let y = 0; y <= plan.h; y++) for (let x = 0; x <= plan.w; x++) {
+      // croix rouge si toutes les cases autour du sommet sont interdites, blanche sinon
+      const white = [[x - 1, y - 1], [x, y - 1], [x - 1, y], [x, y]].some(([cx, cy]) => inB(plan, cx, cy) && !plan.nb[cy * plan.w + cx])
+      g.fillStyle = white ? 'rgba(255,255,255,.85)' : 'rgba(255,110,110,.95)'
+      g.fillRect(x * CS - 3, y * CS - .5, 7, 1.5); g.fillRect(x * CS - .5, y * CS - 3, 1.5, 7)
+    }
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `${CS * .55}px sans-serif`
     for (const o of plan.objs) {
       const i = itemOf(o.t), f = fp(i, o.r), cx = (o.x + f.w / 2) * CS, cy = (o.y + f.h / 2) * CS
