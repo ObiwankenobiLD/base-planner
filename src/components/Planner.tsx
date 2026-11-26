@@ -43,9 +43,9 @@ const asset = (p: string) => (process.env.NEXT_PUBLIC_BASE_PATH || '') + p
 // w et h sont facultatifs (1 par défaut) : { x: 3, y: 5 } = un seul carré ; { x: 0, y: 12, w: 5, h: 4 } = un bloc de carrés.
 // Dans l'appli, un clic sur une zone rouge propose de la supprimer (popup Oui / Non). Il n'y a plus d'outil pour en ajouter.
 const DEFAULT_NOBUILD: { x: number; y: number; w?: number; h?: number }[] = [
-  { x: 15, y: 0, w: 2, h: 2 },
-  { x: 17, y: 0, w: 2, h: 2 },
-  { x: 19, y: 0, w: 2, h: 2 },
+  { x: 0, y: 0, w: 2, h: 2 },
+  // { x: 10, y: 3 },
+  // { x: 15, y: 8 },
 ]
 // Cases RETIRÉES de la carte : plus de grille, plus de zone claire, rien ne peut s'y poser (le joueur ne peut pas les remettre).
 // Même format que ci-dessus : { x, y, w?, h? }. Modifier cette liste suffit : elle est ré-appliquée à chaque chargement de la page.
@@ -199,28 +199,46 @@ export default function Planner() {
       if (!around.some(([cx, cy]) => !isHole(plan, cx, cy) && !plan.nb[cy * plan.w + cx])) continue
       g.fillRect(x * CS - 3, y * CS - .5, 7, 1.5); g.fillRect(x * CS - .5, y * CS - 3, 1.5, 7)
     }
-    // Grandes croix rouges : une rangée de X par zone interdite, chaque X fait la taille du petit côté de la zone
-    // (ex. zone 6x2 -> 3 croix de 2x2 ; zone 5x4 -> 1 croix de 5x4). Plus aucune petite croix aux intersections.
+    // Zones interdites : rayures diagonales rouge clair, contour rouge clair, coins plus foncés (style jeu)
     const zones = new Map<number, Pt[]>()
     plan.nb.forEach((v, i) => { if (v) { const k = nbKey(plan, i), l = zones.get(k) ?? []; l.push({ x: i % plan.w, y: Math.floor(i / plan.w) }); zones.set(k, l) } })
-    const RED = 'rgba(255,110,110,.95)', RED_W = 1 // couleur et épaisseur des traits rouges (1 = même épaisseur que la grille blanche)
-    g.strokeStyle = RED; g.lineWidth = RED_W; g.lineCap = 'butt'; g.beginPath()
-    // bordure rouge autour de chaque case interdite
+    const LIGHT = 'rgba(255,120,120,.9)', DARK = 'rgba(185,25,25,.95)' // contour clair / coins foncés
+    const STRIPE = 'rgba(255,175,175,.32)', STRIPE_W = 7, STRIPE_GAP = 18 // rayures : couleur, épaisseur, espacement (px)
+    const CORNER = 16, EDGE_W = 2, CORNER_W = 4 // longueur des coins, épaisseur du contour, épaisseur des coins
+    const isNb = (x: number, y: number) => inB(plan, x, y) && plan.nb[y * plan.w + x]
+    // bordure fine rouge autour de chaque case interdite (comme la grille blanche)
+    g.strokeStyle = 'rgba(255,110,110,.55)'; g.lineWidth = 1; g.beginPath()
     plan.nb.forEach((v, i) => { if (v) g.rect((i % plan.w) * CS + .5, Math.floor(i / plan.w) * CS + .5, CS, CS) })
-    for (const cells of zones.values()) {
-      const x0 = Math.min(...cells.map(c => c.x)), x1 = Math.max(...cells.map(c => c.x)) + 1
-      const y0 = Math.min(...cells.map(c => c.y)), y1 = Math.max(...cells.map(c => c.y)) + 1
-      const zw = x1 - x0, zh = y1 - y0, horiz = zw >= zh
-      const n = Math.max(1, Math.round((horiz ? zw : zh) / Math.min(zw, zh))) // nombre de croix le long du grand côté
-      const tw = horiz ? zw / n : zw, th = horiz ? zh : zh / n
-      for (let k = 0; k < n; k++) {
-        const tx = x0 + (horiz ? k * tw : 0), ty = y0 + (horiz ? 0 : k * th)
-        if (!plan.nb[Math.floor(ty + th / 2) * plan.w + Math.floor(tx + tw / 2)]) continue // zone non rectangulaire : pas de croix hors zone
-        const px = tx * CS + 2, py = ty * CS + 2, qx = (tx + tw) * CS - 2, qy = (ty + th) * CS - 2
-        g.moveTo(px, py); g.lineTo(qx, qy); g.moveTo(qx, py); g.lineTo(px, qy)
-      }
-    }
     g.stroke()
+    for (const cells of zones.values()) {
+      const x0 = Math.min(...cells.map(c => c.x)) * CS, x1 = (Math.max(...cells.map(c => c.x)) + 1) * CS
+      const y0 = Math.min(...cells.map(c => c.y)) * CS, y1 = (Math.max(...cells.map(c => c.y)) + 1) * CS
+      // rayures diagonales, limitées aux cases de la zone
+      g.save(); g.beginPath(); for (const c of cells) g.rect(c.x * CS, c.y * CS, CS, CS); g.clip()
+      g.strokeStyle = STRIPE; g.lineWidth = STRIPE_W; g.lineCap = 'butt'; g.beginPath()
+      for (let d = x0 - (y1 - y0); d < x1; d += STRIPE_GAP) { g.moveTo(d, y1); g.lineTo(d + (y1 - y0), y0) }
+      g.stroke(); g.restore()
+      // contour clair (seulement les côtés extérieurs de la zone)
+      g.strokeStyle = LIGHT; g.lineWidth = EDGE_W; g.lineCap = 'square'; g.beginPath()
+      for (const { x, y } of cells) {
+        const px = x * CS, py = y * CS
+        if (!isNb(x, y - 1)) { g.moveTo(px, py); g.lineTo(px + CS, py) }
+        if (!isNb(x, y + 1)) { g.moveTo(px, py + CS); g.lineTo(px + CS, py + CS) }
+        if (!isNb(x - 1, y)) { g.moveTo(px, py); g.lineTo(px, py + CS) }
+        if (!isNb(x + 1, y)) { g.moveTo(px + CS, py); g.lineTo(px + CS, py + CS) }
+      }
+      g.stroke()
+      // coins foncés (angles extérieurs de la zone)
+      g.strokeStyle = DARK; g.lineWidth = CORNER_W; g.lineCap = 'butt'; g.beginPath()
+      for (const { x, y } of cells) {
+        const px = x * CS, py = y * CS, t = !isNb(x, y - 1), bo = !isNb(x, y + 1), l = !isNb(x - 1, y), r = !isNb(x + 1, y)
+        if (t && l) { g.moveTo(px, py + CORNER); g.lineTo(px, py); g.lineTo(px + CORNER, py) }
+        if (t && r) { g.moveTo(px + CS - CORNER, py); g.lineTo(px + CS, py); g.lineTo(px + CS, py + CORNER) }
+        if (bo && l) { g.moveTo(px, py + CS - CORNER); g.lineTo(px, py + CS); g.lineTo(px + CORNER, py + CS) }
+        if (bo && r) { g.moveTo(px + CS - CORNER, py + CS); g.lineTo(px + CS, py + CS); g.lineTo(px + CS, py + CS - CORNER) }
+      }
+      g.stroke()
+    }
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `${CS * .55}px sans-serif`
     for (const o of plan.objs) {
       const i = itemOf(o.t), f = fp(i, o.r), cx = (o.x + f.w / 2) * CS, cy = (o.y + f.h / 2) * CS
