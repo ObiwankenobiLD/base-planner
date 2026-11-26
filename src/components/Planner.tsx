@@ -120,7 +120,7 @@ export default function Planner() {
     const c = cv.current; if (!c) return
     const g = c.getContext('2d')!, W = plan.w * CS, H = plan.h * CS
     c.width = W + 2 * M * CS; c.height = H + 2 * M * CS
-    if (!grass.current) { const im = new Image(); im.onload = () => setTick(t => t + 1); im.src = asset('/assets/grass0.png'); grass.current = im }
+    if (!grass.current) { const im = new Image(); im.onload = () => setTick(t => t + 1); im.src = asset('/assets/grass.png'); grass.current = im }
     const ok = grass.current.complete && grass.current.naturalWidth > 0
     const k = `${plan.w}x${plan.h}${ok ? 'i' : 'p'}`
     if (terrain.current?.k !== k) terrain.current = { k, c: makeTerrain(plan.w + 2 * M, plan.h + 2 * M, ok ? grass.current : undefined) }
@@ -131,7 +131,7 @@ export default function Planner() {
     for (let y = 0; y <= plan.h; y++) { g.moveTo(0, y * CS + .5); g.lineTo(W, y * CS + .5) }
     g.stroke()
     g.fillStyle = 'rgba(255,255,255,.85)'
-    for (let y = 0; y <= plan.h; y++) for (let x = 0; x <= plan.w; x++) if (hash(x, y, 77) > .55) { g.fillRect(x * CS - 3, y * CS - .5, 7, 1.5); g.fillRect(x * CS - .5, y * CS - 3, 1.5, 7) }
+    for (let y = 0; y <= plan.h; y++) for (let x = 0; x <= plan.w; x++) { g.fillRect(x * CS - 3, y * CS - .5, 7, 1.5); g.fillRect(x * CS - .5, y * CS - 3, 1.5, 7) }
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `${CS * .55}px sans-serif`
     for (const o of plan.objs) {
       const i = itemOf(o.t), f = fp(i, o.r), cx = (o.x + f.w / 2) * CS, cy = (o.y + f.h / 2) * CS
