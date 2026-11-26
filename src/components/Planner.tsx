@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { CATALOG, FLOOR_COLORS, WALL_COLORS, canPlace, edgeBlocked, edgeLine, edgeRect, eIdx, fillCells, fp, inB, inE, isHole, itemOf, lineCells, nbGroup, nearestEdge, newPlan, objAt, rectCells } from '@/lib/plan'
+import { CATALOG, FLOOR_COLORS, WALL_COLORS, canPlace, edgeBlocked, edgeLine, edgeRect, eIdx, fillCells, fp, inB, inE, isHole, itemOf, lineCells, nbGroup, nbKey, nearestEdge, newPlan, objAt, rectCells } from '@/lib/plan'
 import type { EdgeRef, Item, Kind, Plan, Pt, Rot } from '@/lib/plan'
 
 type Tool = 'floor' | 'wall' | 'object' | 'eraser' | 'hand'
@@ -182,24 +182,42 @@ export default function Planner() {
     if (terrain.current?.k !== k) terrain.current = { k, c: makeTerrain(plan.w + 2 * M, plan.h + 2 * M, ok ? grass.current : undefined, plan.hole, plan.nb, plan.w) }
     g.drawImage(terrain.current.c, 0, 0); g.translate(M * CS, M * CS)
     for (let y = 0; y < plan.h; y++) for (let x = 0; x < plan.w; x++) { const l = plan.floor[y * plan.w + x]; if (l) { g.fillStyle = FLOOR_COLORS[l]; g.fillRect(x * CS, y * CS, CS, CS) } }
-    // Zones interdites : simple teinte rouge transparente sur l'herbe (pas de zone claire dessous), avec des croix rouges
+    // Zones interdites : simple teinte rouge transparente sur l'herbe (pas de zone claire dessous), avec de grandes croix rouges
     g.fillStyle = 'rgba(230,60,60,.32)'
     for (let y = 0; y < plan.h; y++) for (let x = 0; x < plan.w; x++) if (plan.nb[y * plan.w + x]) g.fillRect(x * CS, y * CS, CS, CS)
-    // Grille : traits blancs partout sauf à l'intérieur des zones interdites, où il ne reste que des croix rouges (les croix touchant une case constructible restent blanches)
+    // Grille : traits blancs partout sauf à l'intérieur des zones interdites, (les grandes croix rouges sont dessinées plus bas)
     const hl: [number, number, number, number][] = []
     const vis = (e: EdgeRef) => (e.o === 'h' ? [[e.x, e.y - 1], [e.x, e.y]] : [[e.x - 1, e.y], [e.x, e.y]]).some(([cx, cy]) => !isHole(plan, cx, cy)) // grille absente entre deux cases retirées
     for (let y = 0; y <= plan.h; y++) for (let x = 0; x < plan.w; x++) if (vis({ o: 'h', x, y }) && !edgeBlocked(plan, { o: 'h', x, y })) hl.push([x * CS, y * CS + .5, (x + 1) * CS, y * CS + .5])
     for (let x = 0; x <= plan.w; x++) for (let y = 0; y < plan.h; y++) if (vis({ o: 'v', x, y }) && !edgeBlocked(plan, { o: 'v', x, y })) hl.push([x * CS + .5, y * CS, x * CS + .5, (y + 1) * CS])
     g.lineWidth = 1
     g.strokeStyle = 'rgba(255,255,255,.32)'; g.beginPath(); for (const [x0, y0, x1, y1] of hl) { g.moveTo(x0, y0); g.lineTo(x1, y1) } g.stroke()
+    // Petites croix blanches : uniquement aux sommets touchant au moins une case constructible (aucune croix rouge)
+    g.fillStyle = 'rgba(255,255,255,.85)'
     for (let y = 0; y <= plan.h; y++) for (let x = 0; x <= plan.w; x++) {
-      // croix rouge si toutes les cases autour du sommet sont interdites, blanche sinon
       const around = [[x - 1, y - 1], [x, y - 1], [x - 1, y], [x, y]]
-      if (around.every(([cx, cy]) => isHole(plan, cx, cy))) continue
-      const white = around.some(([cx, cy]) => !isHole(plan, cx, cy) && !plan.nb[cy * plan.w + cx])
-      g.fillStyle = white ? 'rgba(255,255,255,.85)' : 'rgba(255,110,110,.95)'
+      if (!around.some(([cx, cy]) => !isHole(plan, cx, cy) && !plan.nb[cy * plan.w + cx])) continue
       g.fillRect(x * CS - 3, y * CS - .5, 7, 1.5); g.fillRect(x * CS - .5, y * CS - 3, 1.5, 7)
     }
+    // Grandes croix rouges : une rangée de X par zone interdite, chaque X fait la taille du petit côté de la zone
+    // (ex. zone 6x2 -> 3 croix de 2x2 ; zone 5x4 -> 1 croix de 5x4). Plus aucune petite croix aux intersections.
+    const zones = new Map<number, Pt[]>()
+    plan.nb.forEach((v, i) => { if (v) { const k = nbKey(plan, i), l = zones.get(k) ?? []; l.push({ x: i % plan.w, y: Math.floor(i / plan.w) }); zones.set(k, l) } })
+    g.strokeStyle = 'rgba(255,70,70,.95)'; g.lineWidth = 4; g.lineCap = 'butt'; g.beginPath()
+    for (const cells of zones.values()) {
+      const x0 = Math.min(...cells.map(c => c.x)), x1 = Math.max(...cells.map(c => c.x)) + 1
+      const y0 = Math.min(...cells.map(c => c.y)), y1 = Math.max(...cells.map(c => c.y)) + 1
+      const zw = x1 - x0, zh = y1 - y0, horiz = zw >= zh
+      const n = Math.max(1, Math.round((horiz ? zw : zh) / Math.min(zw, zh))) // nombre de croix le long du grand côté
+      const tw = horiz ? zw / n : zw, th = horiz ? zh : zh / n
+      for (let k = 0; k < n; k++) {
+        const tx = x0 + (horiz ? k * tw : 0), ty = y0 + (horiz ? 0 : k * th)
+        if (!plan.nb[Math.floor(ty + th / 2) * plan.w + Math.floor(tx + tw / 2)]) continue // zone non rectangulaire : pas de croix hors zone
+        const px = tx * CS + 2, py = ty * CS + 2, qx = (tx + tw) * CS - 2, qy = (ty + th) * CS - 2
+        g.moveTo(px, py); g.lineTo(qx, qy); g.moveTo(qx, py); g.lineTo(px, qy)
+      }
+    }
+    g.stroke()
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `${CS * .55}px sans-serif`
     for (const o of plan.objs) {
       const i = itemOf(o.t), f = fp(i, o.r), cx = (o.x + f.w / 2) * CS, cy = (o.y + f.h / 2) * CS
