@@ -42,8 +42,9 @@ const asset = (p: string) => (process.env.NEXT_PUBLIC_BASE_PATH || '') + p
 // w et h sont facultatifs (1 par défaut) : { x: 3, y: 5 } = un seul carré ; { x: 0, y: 12, w: 5, h: 4 } = un bloc de carrés.
 // Ils peuvent être retirés dans l'appli (outil « Zone interdite » en mode Retirer, ou Gomme).
 const DEFAULT_NOBUILD: { x: number; y: number; w?: number; h?: number }[] = [
-  { x: 20, y: 0, w: 2, h: 2 },
-  { x: 18, y: 0, w: 2, h: 2 },
+  { x: 15, y: 0, w: 2, h: 2 },
+  { x: 17, y: 0, w: 2, h: 2 },
+  { x: 19, y: 0, w: 2, h: 2 },
 ]
 function withDefaults(p: Plan): Plan {
   const n = structuredClone(p)
